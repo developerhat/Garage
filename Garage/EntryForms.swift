@@ -9,9 +9,14 @@ struct VehicleFormView: View {
     @State private var make: String
     @State private var model: String
     @State private var trim: String
+    @State private var nickname: String
+    @State private var vin: String
+    @State private var licensePlate: String
     @State private var mileage: String
     @State private var value: String
     @State private var notes: String
+    @State private var isLookingUpVIN = false
+    @State private var vinLookupError: String?
 
     init(vehicle: Vehicle? = nil) {
         self.vehicle = vehicle
@@ -19,6 +24,9 @@ struct VehicleFormView: View {
         _make = State(initialValue: vehicle?.make ?? "")
         _model = State(initialValue: vehicle?.model ?? "")
         _trim = State(initialValue: vehicle?.trim ?? "")
+        _nickname = State(initialValue: vehicle?.nickname ?? "")
+        _vin = State(initialValue: vehicle?.vin ?? "")
+        _licensePlate = State(initialValue: vehicle?.licensePlate ?? "")
         _mileage = State(initialValue: vehicle.map { String($0.mileage) } ?? "")
         _value = State(initialValue: vehicle?.estimatedValue.map { String($0) } ?? "")
         _notes = State(initialValue: vehicle?.notes ?? "")
@@ -35,11 +43,43 @@ struct VehicleFormView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    TextField("17-character VIN", text: $vin)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .onChange(of: vin) { _, newValue in
+                            vin = String(newValue.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(17))
+                            vinLookupError = nil
+                        }
+                    Button {
+                        Task { await lookupVIN() }
+                    } label: {
+                        if isLookingUpVIN {
+                            Label("Looking Up VIN…", systemImage: "progress.indicator")
+                        } else {
+                            Label("Look Up VIN", systemImage: "magnifyingglass")
+                        }
+                    }
+                    .disabled(vin.count != 17 || isLookingUpVIN)
+                    if let vinLookupError {
+                        Text(vinLookupError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                } header: {
+                    Text("VIN")
+                } footer: {
+                    Text("VIN lookup uses the U.S. National Highway Traffic Safety Administration database. You can still enter or change every field manually.")
+                }
                 Section("Vehicle") {
+                    TextField("Nickname (optional)", text: $nickname)
                     TextField("Year", text: $year).keyboardType(.numberPad)
                     TextField("Make", text: $make)
                     TextField("Model", text: $model)
                     TextField("Trim (optional)", text: $trim)
+                    TextField("License plate (optional)", text: $licensePlate)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
                 }
                 Section("Tracking") {
                     TextField("Current mileage", text: $mileage).keyboardType(.numberPad)
@@ -63,15 +103,36 @@ struct VehicleFormView: View {
             vehicle.make = make.trimmed
             vehicle.model = model.trimmed
             vehicle.trim = trim.trimmed
+            vehicle.nickname = nickname.trimmed
+            vehicle.vin = vin
+            vehicle.licensePlate = licensePlate.trimmed.uppercased()
             vehicle.mileage = odometer
             vehicle.estimatedValue = Double(value)
             vehicle.notes = notes.trimmed
         } else {
             context.insert(Vehicle(year: vehicleYear, make: make.trimmed, model: model.trimmed,
-                                   trim: trim.trimmed, mileage: odometer,
+                                   trim: trim.trimmed, nickname: nickname.trimmed, vin: vin,
+                                   licensePlate: licensePlate.trimmed.uppercased(), mileage: odometer,
                                    estimatedValue: Double(value), notes: notes.trimmed))
         }
         dismiss()
+    }
+
+    @MainActor
+    private func lookupVIN() async {
+        isLookingUpVIN = true
+        vinLookupError = nil
+        defer { isLookingUpVIN = false }
+
+        do {
+            let details = try await VINLookupService().decode(vin)
+            if let decodedYear = details.year { year = String(decodedYear) }
+            if !details.make.isEmpty { make = details.make.capitalized }
+            if !details.model.isEmpty { model = details.model.capitalized }
+            if !details.trim.isEmpty { trim = details.trim }
+        } catch {
+            vinLookupError = error.localizedDescription
+        }
     }
 }
 

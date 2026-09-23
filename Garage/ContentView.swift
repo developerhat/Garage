@@ -30,7 +30,12 @@ struct ContentView: View {
                                     .frame(width: 44, height: 44)
                                     .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(vehicle.name).font(.headline)
+                                    Text(vehicle.displayName).font(.headline)
+                                    if !vehicle.nickname.isEmpty {
+                                        Text(vehicle.name)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                     Text("\(vehicle.mileage.formatted()) mi")
                                         .font(.subheadline).foregroundStyle(.secondary)
                                 }

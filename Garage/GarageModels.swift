@@ -8,17 +8,27 @@ final class Vehicle {
     var make: String
     var model: String
     var trim: String
+    var nickname: String = ""
+    var vin: String = ""
+    var licensePlate: String = ""
+    @Attribute(.externalStorage) var photoData: Data?
     var mileage: Int
     var estimatedValue: Double?
     var notes: String
     var createdAt: Date
 
-    init(year: Int, make: String, model: String, trim: String = "", mileage: Int = 0, estimatedValue: Double? = nil, notes: String = "") {
+    init(year: Int, make: String, model: String, trim: String = "", nickname: String = "",
+         vin: String = "", licensePlate: String = "", mileage: Int = 0,
+         estimatedValue: Double? = nil, notes: String = "", photoData: Data? = nil) {
         id = UUID()
         self.year = year
         self.make = make
         self.model = model
         self.trim = trim
+        self.nickname = nickname
+        self.vin = vin
+        self.licensePlate = licensePlate
+        self.photoData = photoData
         self.mileage = mileage
         self.estimatedValue = estimatedValue
         self.notes = notes
@@ -26,6 +36,7 @@ final class Vehicle {
     }
 
     var name: String { "\(year) \(make) \(model)" }
+    var displayName: String { nickname.isEmpty ? name : nickname }
 }
 
 @Model
