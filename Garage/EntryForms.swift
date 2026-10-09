@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UIKit
 
 struct VehicleFormView: View {
     @Environment(\.modelContext) private var context
@@ -200,6 +202,10 @@ struct ServiceFormView: View {
     @State private var mileage: String
     @State private var cost = ""
     @State private var notes = ""
+    @State private var selectedReceipts: [PhotosPickerItem] = []
+    @State private var receiptImages: [Data] = []
+    @State private var isLoadingReceipts = false
+    @State private var receiptError: String?
 
     init(vehicle: Vehicle, task: MaintenanceTask? = nil) {
         self.vehicle = vehicle
@@ -223,6 +229,53 @@ struct ServiceFormView: View {
                     TextField("Cost in USD (optional)", text: $cost).keyboardType(.decimalPad)
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                 }
+                Section {
+                    PhotosPicker(selection: $selectedReceipts, maxSelectionCount: 5, matching: .images) {
+                        Label(receiptImages.isEmpty ? "Add Receipts" : "Add More Receipts",
+                              systemImage: "doc.viewfinder")
+                    }
+                    .disabled(isLoadingReceipts)
+
+                    if isLoadingReceipts {
+                        HStack {
+                            ProgressView()
+                            Text("Adding receipts…").foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if !receiptImages.isEmpty {
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 12) {
+                                ForEach(Array(receiptImages.enumerated()), id: \.offset) { index, data in
+                                    if let image = UIImage(data: data) {
+                                        ZStack(alignment: .topTrailing) {
+                                            Image(uiImage: image)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 110, height: 140)
+                                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                            Button {
+                                                receiptImages.remove(at: index)
+                                            } label: {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .font(.title2)
+                                                    .symbolRenderingMode(.palette)
+                                                    .foregroundStyle(.white, .black.opacity(0.65))
+                                            }
+                                            .padding(6)
+                                            .accessibilityLabel("Remove receipt \(index + 1)")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .scrollIndicators(.hidden)
+                    }
+                } header: {
+                    Text("Receipts")
+                } footer: {
+                    Text("Add up to five receipt images to this maintenance entry.")
+                }
                 if task != nil {
                     Section {
                         Text("Saving this record updates the task's next due date and mileage.")
@@ -236,16 +289,61 @@ struct ServiceFormView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!valid) }
             }
+            .onChange(of: selectedReceipts) { _, newItems in
+                guard !newItems.isEmpty else { return }
+                Task { await loadReceipts(newItems) }
+            }
+            .alert("Couldn’t Add Receipt", isPresented: Binding(
+                get: { receiptError != nil },
+                set: { if !$0 { receiptError = nil } }
+            )) {
+                Button("OK", role: .cancel) { receiptError = nil }
+            } message: {
+                Text(receiptError ?? "Please try another image.")
+            }
         }
     }
 
     private func save() {
         guard valid, let odometer = Int(mileage) else { return }
-        context.insert(ServiceRecord(vehicleID: vehicle.id, name: name.trimmed, date: date,
-                                     mileage: odometer, cost: Double(cost), notes: notes.trimmed))
+        let record = ServiceRecord(vehicleID: vehicle.id, name: name.trimmed, date: date,
+                                   mileage: odometer, cost: Double(cost), notes: notes.trimmed)
+        context.insert(record)
+        for imageData in receiptImages {
+            context.insert(MaintenanceReceipt(serviceRecordID: record.id, imageData: imageData))
+        }
         task?.complete(on: date, at: odometer)
         if odometer > vehicle.mileage { vehicle.mileage = odometer }
         dismiss()
+    }
+
+    @MainActor
+    private func loadReceipts(_ items: [PhotosPickerItem]) async {
+        isLoadingReceipts = true
+        defer {
+            isLoadingReceipts = false
+            selectedReceipts = []
+        }
+
+        do {
+            for item in items where receiptImages.count < 5 {
+                guard let data = try await item.loadTransferable(type: Data.self),
+                      let compressed = PhotoProcessor.compressedJPEG(from: data, maxDimension: 2_000) else {
+                    throw ReceiptLoadingError.unreadableImage
+                }
+                receiptImages.append(compressed)
+            }
+        } catch {
+            receiptError = error.localizedDescription
+        }
+    }
+}
+
+private enum ReceiptLoadingError: LocalizedError {
+    case unreadableImage
+
+    var errorDescription: String? {
+        "Garage couldn’t read one of those receipt images."
     }
 }
 

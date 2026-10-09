@@ -8,6 +8,7 @@ struct VehicleDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var allTasks: [MaintenanceTask]
     @Query private var allRecords: [ServiceRecord]
+    @Query private var allReceipts: [MaintenanceReceipt]
     let vehicle: Vehicle
     @State private var showingEditVehicle = false
     @State private var showingAddTask = false
@@ -110,22 +111,26 @@ struct VehicleDetailView: View {
             Section("Service History") {
                 if records.isEmpty { Text("No service recorded yet").foregroundStyle(.secondary) }
                 ForEach(records) { record in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(record.name).font(.headline)
-                            Spacer()
-                            if let cost = record.cost {
-                                Text(cost.formatted(.currency(code: "USD"))).foregroundStyle(.secondary)
+                    NavigationLink {
+                        ServiceRecordDetailView(record: record, vehicle: vehicle)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(record.name).font(.headline)
+                                Spacer()
+                                if let cost = record.cost {
+                                    Text(cost.formatted(.currency(code: "USD"))).foregroundStyle(.secondary)
+                                }
                             }
+                            Text("\(record.date.formatted(date: .abbreviated, time: .omitted)) · \(record.mileage.formatted()) mi")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            if !record.notes.isEmpty { Text(record.notes).font(.subheadline) }
                         }
-                        Text("\(record.date.formatted(date: .abbreviated, time: .omitted)) · \(record.mileage.formatted()) mi")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        if !record.notes.isEmpty { Text(record.notes).font(.subheadline) }
+                        .padding(.vertical, 3)
                     }
-                    .padding(.vertical, 3)
                 }
                 .onDelete { offsets in
-                    for index in offsets { context.delete(records[index]) }
+                    for index in offsets { deleteRecord(records[index]) }
                 }
                 Button("Log Service", systemImage: "plus") { showingAddRecord = true }
             }
@@ -143,7 +148,7 @@ struct VehicleDetailView: View {
         .confirmationDialog("Delete \(vehicle.displayName)?", isPresented: $showingDeleteConfirmation) {
             Button("Delete Vehicle and Its Records", role: .destructive) {
                 for task in tasks { context.delete(task) }
-                for record in records { context.delete(record) }
+                for record in records { deleteRecord(record) }
                 context.delete(vehicle)
                 dismiss()
             }
@@ -173,8 +178,7 @@ struct VehicleDetailView: View {
         guard let selectedPhoto else { return }
         do {
             guard let originalData = try await selectedPhoto.loadTransferable(type: Data.self),
-                  let originalImage = UIImage(data: originalData),
-                  let compressedData = originalImage.garagePhotoData() else {
+                  let compressedData = PhotoProcessor.compressedJPEG(from: originalData) else {
                 throw PhotoLoadingError.unreadableImage
             }
             vehicle.photoData = compressedData
@@ -184,6 +188,13 @@ struct VehicleDetailView: View {
             self.selectedPhoto = nil
         }
     }
+
+    private func deleteRecord(_ record: ServiceRecord) {
+        for receipt in allReceipts where receipt.serviceRecordID == record.id {
+            context.delete(receipt)
+        }
+        context.delete(record)
+    }
 }
 
 private enum PhotoLoadingError: LocalizedError {
@@ -191,20 +202,5 @@ private enum PhotoLoadingError: LocalizedError {
 
     var errorDescription: String? {
         "Garage couldn’t read that image. Please choose another photo."
-    }
-}
-
-private extension UIImage {
-    func garagePhotoData(maxDimension: CGFloat = 1_600) -> Data? {
-        let longestSide = max(size.width, size.height)
-        guard longestSide > 0 else { return nil }
-        let scale = min(1, maxDimension / longestSide)
-        let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
-            draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-        return resized.jpegData(compressionQuality: 0.82)
     }
 }

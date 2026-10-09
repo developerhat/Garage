@@ -1,6 +1,16 @@
 import Foundation
 import SwiftData
 
+enum MaintenanceStatus: Int, Comparable {
+    case overdue
+    case dueSoon
+    case upcoming
+
+    static func < (lhs: MaintenanceStatus, rhs: MaintenanceStatus) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 @Model
 final class Vehicle {
     var id: UUID
@@ -62,7 +72,19 @@ final class MaintenanceTask {
     }
 
     func isDue(currentMileage: Int, on date: Date = .now) -> Bool {
-        (dueDate.map { $0 <= date } ?? false) || (dueMileage.map { $0 <= currentMileage } ?? false)
+        status(currentMileage: currentMileage, on: date) == .overdue
+    }
+
+    func status(currentMileage: Int, on date: Date = .now) -> MaintenanceStatus {
+        let startOfToday = Calendar.current.startOfDay(for: date)
+        let dateIsOverdue = dueDate.map { $0 < startOfToday } ?? false
+        let mileageIsOverdue = dueMileage.map { $0 <= currentMileage } ?? false
+        if dateIsOverdue || mileageIsOverdue { return .overdue }
+
+        let dueSoonDate = Calendar.current.date(byAdding: .day, value: 30, to: startOfToday) ?? date
+        let dateIsSoon = dueDate.map { $0 <= dueSoonDate } ?? false
+        let mileageIsSoon = dueMileage.map { $0 - currentMileage <= 1_000 } ?? false
+        return dateIsSoon || mileageIsSoon ? .dueSoon : .upcoming
     }
 
     func complete(on date: Date, at mileage: Int) {
@@ -91,5 +113,20 @@ final class ServiceRecord {
         self.mileage = mileage
         self.cost = cost
         self.notes = notes
+    }
+}
+
+@Model
+final class MaintenanceReceipt {
+    var id: UUID
+    var serviceRecordID: UUID
+    @Attribute(.externalStorage) var imageData: Data
+    var createdAt: Date
+
+    init(serviceRecordID: UUID, imageData: Data) {
+        id = UUID()
+        self.serviceRecordID = serviceRecordID
+        self.imageData = imageData
+        createdAt = .now
     }
 }

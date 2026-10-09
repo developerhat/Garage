@@ -6,6 +6,6 @@ import SwiftData
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [Vehicle.self, MaintenanceTask.self, ServiceRecord.self])
+        .modelContainer(for: [Vehicle.self, MaintenanceTask.self, ServiceRecord.self, MaintenanceReceipt.self])
     }
 }

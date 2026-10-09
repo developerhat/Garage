@@ -2,6 +2,18 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
+    var body: some View {
+        TabView {
+            GarageView()
+                .tabItem { Label("Garage", systemImage: "car.side") }
+
+            MaintenanceDashboardView()
+                .tabItem { Label("Maintenance", systemImage: "wrench.and.screwdriver") }
+        }
+    }
+}
+
+private struct GarageView: View {
     @Query(sort: \Vehicle.createdAt, order: .reverse) private var vehicles: [Vehicle]
     @Query private var tasks: [MaintenanceTask]
     @State private var showingAddVehicle = false
@@ -66,5 +78,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [Vehicle.self, MaintenanceTask.self, ServiceRecord.self], inMemory: true)
+        .modelContainer(for: [Vehicle.self, MaintenanceTask.self, ServiceRecord.self, MaintenanceReceipt.self], inMemory: true)
 }
